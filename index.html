@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pptxぶち抜き君</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        #fileInput {
+            margin-bottom: 20px;
+        }
+        .note {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        .slide-number {
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .copy-btn, #copyAllBtn {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        #copyAllBtn {
+            display: none;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>pptxぶち抜き君</h1>
+        <input type="file" id="fileInput" accept=".pptx">
+        <button id="copyAllBtn">すべてのノートをコピー</button>
+        <div id="notes"></div>
+    </div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                
+                JSZip.loadAsync(arrayBuffer).then(function(zip) {
+                    const slidePromises = [];
+                    const notePromises = [];
+
+                    zip.folder("ppt/slides").forEach(function(relativePath, file) {
+                        if (relativePath.match(/slide(\d+)\.xml/)) {
+                            slidePromises.push({
+                                number: parseInt(RegExp.$1),
+                                promise: file.async("string")
+                            });
+                        }
+                    });
+
+                    zip.folder("ppt/notesSlides").forEach(function(relativePath, file) {
+                        if (relativePath.match(/notesSlide(\d+)\.xml/)) {
+                            notePromises.push({
+                                number: parseInt(RegExp.$1),
+                                promise: file.async("string")
+                            });
+                        }
+                    });
+
+                    Promise.all(notePromises.map(item => item.promise)).then(function(notesXmls) {
+                        const notesContainer = document.getElementById('notes');
+                        notesContainer.innerHTML = '<h2>抽出されたノート:</h2>';
+
+                        const allNotes = [];
+
+                        notePromises.forEach(function(item, index) {
+                            const slideNumber = item.number;
+                            const noteXml = notesXmls[index];
+                            const noteText = noteXml.match(/<a:t>([^<]+)<\/a:t>/g);
+
+                            if (noteText) {
+                                const noteContent = noteText.map(t => t.replace(/<\/?a:t>/g, '')).join(' ');
+                                allNotes.push(`スライド ${slideNumber}: ${noteContent}`);
+
+                                const noteDiv = document.createElement('div');
+                                noteDiv.className = 'note';
+                                noteDiv.innerHTML = `
+                                    <p><span class="slide-number">スライド ${slideNumber}:</span> ${noteContent}</p>
+                                    <button class="copy-btn" onclick="copyToClipboard('スライド ${slideNumber}: ${noteContent}')">このノートをコピー</button>
+                                `;
+                                notesContainer.appendChild(noteDiv);
+                            }
+                        });
+
+                        if (allNotes.length > 0) {
+                            const copyAllBtn = document.getElementById('copyAllBtn');
+                            copyAllBtn.style.display = 'inline-block';
+                            copyAllBtn.onclick = function() {
+                                copyToClipboard(allNotes.join('\n\n'));
+                            };
+                        }
+                    });
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(function() {
+                alert('ノートをクリップボードにコピーしました。');
+            }, function(err) {
+                console.error('コピーに失敗しました:', err);
+            });
+        }
+    </script>
+</body>
+</html>
